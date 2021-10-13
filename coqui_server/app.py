@@ -8,7 +8,7 @@ from sanic import Sanic, response
 from sanic.log import logger
 
 from .engine import SpeechToTextEngine
-from .models import Response, Error
+from .models import Error, Response
 
 # Load app configs and initialize Coqui model
 conf = ConfigFactory.parse_file("application.conf")
@@ -34,16 +34,42 @@ async def stt(request, ws):
         audio = await ws.recv()
 
         inference_start = perf_counter()
-        text = await app.loop.run_in_executor(executor, lambda: engine.run(audio))
+        text = await app.loop.run_in_executor(executor, lambda: engine.run_wav(audio))
         inference_end = perf_counter() - inference_start
 
         await ws.send(json.dumps(Response(text, inference_end).__dict__))
-        logger.debug(f"Completed {request.method} request at {request.path} in {inference_end} seconds")
+        logger.debug(
+            f"Completed {request.method} request at {request.path} in {inference_end} seconds"
+        )
     except Exception as e:  # pylint: disable=broad-except
-        logger.debug(f"Failed to process {request.method} request at {request.path}. The exception is: {str(e)}.")
+        logger.debug(
+            f"Failed to process {request.method} request at {request.path}. The exception is: {str(e)}."
+        )
         await ws.send(json.dumps(Error("Something went wrong").__dict__))
 
     await ws.close()
+
+
+class RtpServerProtocol:
+    """Protocol to process received RTP packets"""
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def datagram_received(self, data, addr):
+        logger.debug(f"RTP packet received from {addr}")
+        engine.process_rtp_packet(data)
+
+
+# Create a datagram socket, listen for incoming datagrams and transcribe voiced frames
+@app.before_server_start
+async def setup_udp(app, loop):
+    print("UDP server up and running")
+    print("Server listening on port", conf["server.http.port"])
+    transport, protocol = await app.loop.create_datagram_endpoint(
+        lambda: RtpServerProtocol(),
+        local_addr=(conf["server.http.host"], conf["server.http.port"]),
+    )
 
 
 if __name__ == "__main__":
