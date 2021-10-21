@@ -1,3 +1,4 @@
+import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -17,9 +18,10 @@ engine = SpeechToTextEngine(
     scorer_path=Path(conf["coqui.scorer"]).absolute().as_posix(),
 )
 
-# Initialze Sanic and ThreadPoolExecutor
+# Initialze Sanic, ThreadPoolExecutor and set maximum websocket size
 executor = ThreadPoolExecutor(max_workers=conf["server.threadpool.count"])
 app = Sanic("coqui_server")
+app.config.WEBSOCKET_MAX_SIZE = conf["server.websocket.max_size"]
 
 
 @app.route("/", methods=["GET"])
@@ -57,11 +59,11 @@ class RtpServerProtocol:
         self.transport = transport
 
     def datagram_received(self, data, addr):
-        logger.debug(f"RTP packet received from {addr}")
-        engine.process_rtp_packet(data)
+        # logger.debug(f"RTP packet received from {addr}")
+        app.add_task(engine.process_rtp_packet(data))
 
 
-# Create a datagram socket, listen for incoming datagrams and transcribe voiced frames
+# Create a datagram socket and listen for incoming datagrams
 @app.before_server_start
 async def setup_udp(app, loop):
     print("UDP server up and running")
@@ -70,6 +72,13 @@ async def setup_udp(app, loop):
         lambda: RtpServerProtocol(),
         local_addr=(conf["server.http.host"], conf["server.http.port"]),
     )
+
+
+# Create and process queue of voiced audio frames
+@app.after_server_start
+async def start_transcribe_audio(app, loop):
+    app.queue = asyncio.Queue()
+    app.add_task(engine.transcribe_streaming_audio(app.queue))
 
 
 if __name__ == "__main__":

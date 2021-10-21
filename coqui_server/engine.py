@@ -38,16 +38,6 @@ def normalize_audio(audio):
     return out
 
 
-def transcribe_audio(frames, model):
-    stream_context = model.createStream()
-    print("streaming frame")
-    for frame in frames:
-        stream_context.feedAudioContent(np.frombuffer(frame, np.int16))
-    print("end utterence")
-    text = stream_context.finishStream()
-    print("Recognized:", text)
-
-
 class SpeechToTextEngine:
     def __init__(self, model_path, scorer_path):
         numPaddingFrames = padding // frame_duration
@@ -55,13 +45,12 @@ class SpeechToTextEngine:
         self.model.enableExternalScorer(scorer_path=scorer_path)
         self.ring_buffer = collections.deque(maxlen=numPaddingFrames)
         self.triggered = False
-        self.voiced_frames = []
 
         # Create VAD object with aggressiveness set to 3 (most aggressive)
         self.vad = webrtcvad.Vad(3)
 
     # Get payload from RTP packet and transcribe voiced frames
-    def process_rtp_packet(self, audio):
+    async def process_rtp_packet(self, audio):
         decoded_payload = RTP().fromBytes(audio).payload
 
         is_speech = self.vad.is_speech(decoded_payload, sample_rate)
@@ -72,22 +61,36 @@ class SpeechToTextEngine:
             if num_voiced > ratio * self.ring_buffer.maxlen:
                 self.triggered = True
                 for f, s in self.ring_buffer:
-                    self.voiced_frames.append(f)
+                    await self.frames_queue.put(f)
                 self.ring_buffer.clear()
         else:
-            self.voiced_frames.append(decoded_payload)
+            self.frames_queue.put_nowait(decoded_payload)
             self.ring_buffer.append((decoded_payload, is_speech))
             num_unvoiced = len([f for f, speech in self.ring_buffer if not speech])
             if num_unvoiced > ratio * self.ring_buffer.maxlen:
                 self.triggered = False
+                await self.frames_queue.put(None)
                 self.ring_buffer.clear()
-                transcribe_audio(self.voiced_frames, self.model)
-                self.voiced_frames.clear()
 
     def run_wav(self, audio):
         audio = normalize_audio(audio)
         audio = BytesIO(audio)
-        with wave.Wave_read(audio) as wav:
+        with wave.open(audio) as wav:
             audio = np.frombuffer(wav.readframes(wav.getnframes()), np.int16)
         result = self.model.stt(audio_buffer=audio)
         return result
+
+    async def transcribe_streaming_audio(self, queue):
+        self.frames_queue = queue
+        stream_context = self.model.createStream()
+        print("Streaming interface opened")
+        while True:
+            frame = await self.frames_queue.get()
+            print("streaming frame")
+            if frame is not None:
+                stream_context.feedAudioContent(np.frombuffer(frame, np.int16))
+            else:
+                print("end utterence")
+                text = stream_context.finishStream()
+                print("Recognized:", text)
+                stream_context = self.model.createStream()
