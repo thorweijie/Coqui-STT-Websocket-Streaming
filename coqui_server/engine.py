@@ -49,7 +49,7 @@ class SpeechToTextEngine:
         # Create VAD object with aggressiveness set to 3 (most aggressive)
         self.vad = webrtcvad.Vad(3)
 
-    # Get payload from RTP packet and transcribe voiced frames
+    # Get payload from RTP packet and add voiced frames to queue
     async def process_rtp_packet(self, audio):
         decoded_payload = RTP().fromBytes(audio).payload
 
@@ -80,6 +80,7 @@ class SpeechToTextEngine:
         result = self.model.stt(audio_buffer=audio)
         return result
 
+    # Get voiced frames from queue and stream to CoquiSTT
     async def transcribe_streaming_audio(self, queue):
         self.frames_queue = queue
         stream_context = self.model.createStream()
