@@ -50,5 +50,5 @@ which do not support websockets, like `curl`.
 #### RTP
 
 The server can also accept RTP packets. Upon receiving RTP packets, the server decodes the RTP packet to obtain the payload.
-The payload is then sent to `webrtcvad`(https://pypi.org/project/webrtcvad/), and the voiced audio frames are sent to
+The payload is then sent to [`webrtcvad`](https://pypi.org/project/webrtcvad/), and the voiced audio frames are sent to
 CoquiSTT for transcription. The transcription functionality is still work in progress.
