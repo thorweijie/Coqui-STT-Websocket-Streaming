@@ -7,3 +7,4 @@ sanic==20.3.0
 pyhocon==0.3.54
 numpy~=1.19.0
 webrtcvad~=2.0.10
+websocket-client~=1.2.0
