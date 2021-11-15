@@ -64,7 +64,7 @@ class SpeechToTextEngine:
                     await self.frames_queue.put(f)
                 self.ring_buffer.clear()
         else:
-            self.frames_queue.put_nowait(decoded_payload)
+            await self.frames_queue.put(decoded_payload)
             self.ring_buffer.append((decoded_payload, is_speech))
             num_unvoiced = len([f for f, speech in self.ring_buffer if not speech])
             if num_unvoiced > ratio * self.ring_buffer.maxlen:
