@@ -19,6 +19,7 @@ ratio = conf["vad.ratio"]
 sample_rate = conf["audio.sample_rate"]
 
 
+# Convert audio to 16kHz sampling rate, 16-bit bit depth and mono channel
 def normalize_audio(audio):
     out, err = (
         ffmpeg.input("pipe:0")
